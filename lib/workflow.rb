@@ -35,6 +35,10 @@ module Workflow
         def workflow(&specification)
           Workflow.specify(self, &specification)
         end
+        # returns all the states specified in the main workflow on the specifying class
+        def states
+          @@specifications[self].states.map(&:name)
+        end
       end
       # this should check the inheritance tree, as subclassed models
       # won't return ActiveRecord::Base, they'll return something else
@@ -44,6 +48,7 @@ module Workflow
         receiver.class_eval do
           alias_method :initialize_before_workflow, :initialize
           attr_accessor :workflow
+          
           def initialize(attributes = nil)
             initialize_before_workflow(attributes)
             @workflow = Workflow.new(self.class)
@@ -57,10 +62,15 @@ module Workflow
             end
             @workflow.bind_to(self)
           end
-          alias_method :before_save_before_workflow, :before_save
+          alias_method :before_save_before_workflow, :before_save # this doesn't work with macro defined callbacks
           def before_save
             before_save_before_workflow
             self.workflow_state = @workflow.state.to_s
+          end
+          # skips all the hooks, and delegates an update call to the workflow object
+          def override_state_with(name)
+            @workflow.override_state_with(name)
+            @workflow.current_state.name
           end
         end
       else
@@ -168,6 +178,13 @@ module Workflow
       end
     end
     
+    # skips all the hooks, and just updates the state, providing it exists
+    def override_state_with(name)
+      found = states(name)
+      self.current_state = found if found
+      self.current_state.name
+    end
+        
     def method_missing(name, *args)
       if current_state.events(name)
         process_event!(name, *args)
@@ -195,26 +212,23 @@ module Workflow
   
     def patch_context(context)
       context.instance_variable_set("@workflow", self)
+      
       context.instance_eval do
         alias :method_missing_before_workflow :method_missing
-        #
-        # PROBLEM: method_missing in on_transition events
-        # when bound to other context is raising confusing
-        # error messages, so need to rethink how this is
-        # implemented - i.e. should we just check that an
-        # event exists rather than send ANY message to the
-        # machine? so like:
-        #
-        # if @workflow.state.events(ref_to_sym)
-        #   execute
-        # else
-        #   super ?
-        # end
-        #
         def method_missing(method, *args)
-          @workflow.send(method, *args)
-        rescue NoMethodError
-          method_missing_before_workflow(method, *args)
+          # we create an array of valid method names that can be delegated to the workflow, 
+          # otherwise methods are sent onwards down the chain.
+          # this solves issues with catching a NoMethodError when it means something OTHER than a method missing in the workflow instance
+          # for example, perhaps a NoMethodError is raised in an on_entry block or similar. 
+          # "potential_methods" should probably be calculated elsewhere, not per invocation
+          potential_methods = [:states, :state, :override_state_with, :halted?, :halted_because] +
+                            @workflow.states(@workflow.state).events + 
+                            (@workflow.states.collect {|s| "#{s}?".to_sym})
+          if (potential_methods).include?(method.to_sym)
+            @workflow.send(method, *args)
+          else
+            method_missing_before_workflow(method, *args)
+          end
         end
       end
     end

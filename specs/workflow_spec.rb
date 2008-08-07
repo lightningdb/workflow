@@ -15,8 +15,6 @@ describe 'Workflow:' do
       end
       @workflow = Workflow.new
     end
-  
-  
 
     it 'should have two states' do
       @workflow.states.length.should == 2
@@ -112,7 +110,7 @@ describe 'Workflow:' do
     it 'should not execute on_entry or on_exit on halt'
   end
 
-  describe 'specifying and instanciating named state workflows' do
+  describe 'specifying and instantiating named state workflows' do
   
     setup do
       Workflow.specify :alphabet_workflow do
@@ -313,6 +311,87 @@ describe 'Workflow:' do
     it 'should be a bit more informative on method_missing, tell of events?'
     it 'should provide helpful information if you fuck up the DSL'
     it 'should specifically raise errors when you forget :transitions_to'
+  end
+
+  describe 'overriding the current state' do  
+  
+    setup do
+      Workflow.specify do
+        state(:first)  { event(:next, :transitions_to => :second) { |i| nil } }
+        state(:second) { event(:next, :transitions_to => :third)  { |i| nil } }
+        state(:third)  { event(:back, :transitions_to => :second) { |i| nil } }
+        on_transition do |from, to, triggering_event, *event_args|
+          record [from, to, triggering_event]+event_args
+        end
+      end
+      @workflow = Workflow.new
+      @workflow.extend(Recorder)
+    end
+  
+    it 'should allow call of override_state_with if valid' do
+      @workflow.state.should == :first
+      return_val = @workflow.override_state_with(:second)
+      return_val.should == :second
+      @workflow.state.should == :second
+    end
+  
+    it 'should return the current state on override_state_with if it is called with invalid state' do
+      @workflow.state.should == :first
+      return_val = @workflow.override_state_with(:bad)
+      return_val.should == :first
+      @workflow.state.should == :first
+    end
+    
+    it 'should transfer workflow state to AR column in before_save filter'
+    
+  end
+  
+  describe "delegate from method_missing to workflow only where appropriate" do
+    setup do
+      Workflow.specify do
+        state(:first)  { event(:next, :transitions_to => :second) { |i| nil } }
+        state(:second) { event(:next, :transitions_to => :third)  { |i| nil } }
+        state(:third)  { event(:back, :transitions_to => :second) { |i| nil } }
+        on_transition do |from, to, triggering_event, *event_args|
+          record [from, to, triggering_event]+event_args
+        end
+      end
+      @workflow = Workflow.new
+      @workflow.extend(Recorder)
+    end
+    
+    
+    it "should delegate the fixed methods to workflow correctly" do
+      pending
+    end
+    
+    it "should delegate dynamic workflow methods to workflow object correctly" do
+      pending
+    end
+    
+    it "should not delegate methods that are not in the potential methods list" do
+      pending
+    end
+  end
+  
+  describe "getting array of states on class" do
+    setup do
+      class TestWfSource
+        include Workflow
+        
+        workflow do
+          state(:first)  { event(:next, :transitions_to => :second) }
+          state(:second) { event(:next, :transitions_to => :third) }
+          state(:third)  { event(:back, :transitions_to => :second) }
+        end
+      end
+    end
+
+    it "should return an array of state symbols on a class" do
+      TestWfSource.states.should include(:first)
+      TestWfSource.states.should include(:second)
+      TestWfSource.states.should include(:third)
+    end
   end
   
 end
