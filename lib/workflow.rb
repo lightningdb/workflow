@@ -18,12 +18,24 @@ module Workflow
       @@specifications = {}
     end
 
+  private
+
+    def find_spec_for(klass) # it could either be a symbol, or a class, man, urgh.
+      target = klass 
+      while @@specifications[target].nil? and target != Object
+        target = target.superclass
+      end
+      puts target
+      @@specifications[target]
+    end
+
+  public
     def new(name = :default, args = {})
-      @@specifications[name].to_instance(args[:reconstitute_at])
+      find_spec_for(name).to_instance(args[:reconstitute_at])
     end
 
     def reconstitute(reconstitute_at = nil, name = :default)
-      @@specifications[name].to_instance(reconstitute_at)
+      find_spec_for(name).to_instance(reconstitute_at)
     end
 
     # this method should be split up into Workflow::Integrator
@@ -242,9 +254,11 @@ module Workflow
 
         # TODO "potential_methods" should probably be an instance variable on target context
         def potential_methods
-          return [:states, :state, :override_state_with, :halted?, :halted_because] +
-                            @workflow.states(@workflow.state).events +
+          methods = [:states, :state, :current_state, :override_state_with, :halted?, :halted_because] +
                             (@workflow.states.collect {|s| "#{s}?".to_sym})
+          states = @workflow.states(@workflow.state)
+          methods += states.events unless states.is_a?(Array)
+          return methods
         end
       end
     end
@@ -341,5 +355,5 @@ module Workflow
     end
 
   end
-
 end
+
