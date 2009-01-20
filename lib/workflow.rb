@@ -244,11 +244,11 @@ module Workflow
 
         # rails 2.2 is stricter about method_missing, now we need respond_to
         alias :respond_to_before_workflow :respond_to?
-        def respond_to?(method)
+        def respond_to?(method, include_private=false)
           if potential_methods.include?(method.to_sym)
             return true
           else
-            respond_to_before_workflow(method)
+            respond_to_before_workflow(method, include_private)
           end
         end
 
